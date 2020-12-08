@@ -34,9 +34,10 @@ class BaseTest(unittest.TestCase):
             super().run(result=result)
             if len(result.failures) == failures_before and len(result.errors) == errors_before:
                 return
-            self.logger.error(f'Retrying test {self._testMethodName} after failure/error')
+            print(f'Retrying test {self._testMethodName} after failure/error')
             q = result.failures if len(result.failures) > failures_before else result.errors
             q.pop(-1)
+            time.sleep(1)
 
 
 class LibraryBaseTest(BaseTest):
