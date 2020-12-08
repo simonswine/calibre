@@ -24,6 +24,20 @@ class BaseTest(unittest.TestCase):
 
     ae = unittest.TestCase.assertEqual
 
+    def run(self, result=None):
+        if result is None:
+            result = self.defaultTestResult()
+        max_retries = 1
+        for i in range(max_retries + 1):
+            failures_before = len(result.failures)
+            errors_before = len(result.errors)
+            super().run(result=result)
+            if len(result.failures) == failures_before and len(result.errors) == errors_before:
+                return
+            self.logger.error(f'Retrying test {self._testMethodName} after failure/error')
+            q = result.failures if len(result.failures) > failures_before else result.errors
+            q.pop(-1)
+
 
 class LibraryBaseTest(BaseTest):
 
