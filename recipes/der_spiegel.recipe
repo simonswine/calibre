@@ -1,0 +1,112 @@
+#!/usr/bin/env  python2
+
+__license__ = "GPL v3"
+__copyright__ = "2011, Nikolas Mangold <nmangold at gmail.com>"
+"""
+spiegel.de
+"""
+from calibre.web.feeds.news import BasicNewsRecipe
+from calibre.ebooks.BeautifulSoup import BeautifulSoup
+from calibre import strftime
+from calibre import re
+from urllib.parse import quote
+
+
+def classes(classes):
+    q = frozenset(classes.split(" "))
+    return dict(attrs={"class": lambda x: x and frozenset(x.split()).intersection(q)})
+
+
+class DerSpiegel(BasicNewsRecipe):
+    title = "Der Spiegel"
+    __author__ = "Nikolas Mangold"
+    description = "Der Spiegel, Printed Edition. Access to paid content."
+    publisher = "SPIEGEL-VERLAG RUDOLF AUGSTEIN GMBH & CO. KG"
+    category = "news, politics, Germany"
+    needs_subscription = True
+    YEAR = 2020
+    EDITION = 52
+    INDEX = "https://www.spiegel.de/spiegel/print/index-%d-%d.html" % (YEAR, EDITION)
+    masthead_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Logo-der_spiegel.svg/200px-Logo-der_spiegel.svg.png"
+    magazin_url = "https://magazin.spiegel.de/SP/%d/%d/" % (YEAR, EDITION)
+    cover_url = "https://magazin.spiegel.de/EpubDelivery/image/title/SP/%d/%d/1280" % (
+        YEAR,
+        EDITION,
+    )
+    language = "de"
+    publication_type = "magazine"
+    no_stylesheets = True
+    remove_stylesheets = True
+    remove_javascript = True
+    extra_css = """
+            body {
+                font-family: Arial,Helvetica,sans-serif;
+            }
+            .attribution{
+                text-align: right;
+                font-size: 0.7em;
+                display: block;
+            }
+"""
+    timefmt = "[%04d/%02d]" % (YEAR, EDITION)
+
+    remove_tags = [
+        dict(name="footer"),
+        classes("sharing photocredits autoplay online"),
+    ]
+
+    def get_browser(self):
+        def has_login_name(form):
+            try:
+                form.find_control(name="benutzername")
+            except:
+                return False
+            else:
+                return True
+
+        br = BasicNewsRecipe.get_browser(self)
+        if self.username is not None and self.password is not None:
+            resultx = br.open(self.magazin_url)
+            self.log("Paywall status is %s" % resultx.info()["X-Paywall-AuthStatus"])
+
+            br.open(
+                "https://abo.spiegel.de/de/p/anmelden/start?cso=%s&cbo=%s"
+                % (quote(self.magazin_url), quote(self.magazin_url))
+            )
+            br.select_form(predicate=has_login_name)
+            br["benutzername"] = self.username
+            br["passwort"] = self.password
+            resultx = br.submit()
+
+            paywall_status = resultx.info()["X-Paywall-AuthStatus"]
+            if paywall_status not in ["AUTHENTICATED"]:
+                raise ValueError(
+                    "login failed: unexpected X-Paywall-AuthStatus: %s" % paywall_status
+                )
+
+        return br
+
+    def parse_index(self):
+        soup = self.index_to_soup(self.INDEX)
+
+        # select main block
+        index = soup.find("main")
+
+        feeds = []
+        for section in index.findAll("h2"):
+            section_title = self.tag_to_string(section).strip()
+            self.log("Found section ", section_title)
+
+            section_index = section.parent.parent.findNext("ul")
+
+            articles = []
+            for article in section_index.findAll("li"):
+                title = self.tag_to_string(article).strip()
+                link = article.find("a")
+                if link is None:
+                    continue
+                self.log("Found article ", title)
+                articles.append({"title": title, "url": link["href"]})
+            feeds.append((section_title, articles))
+
+        return feeds
